@@ -1,0 +1,16 @@
+use anchor_lang::prelude::*;
+
+#[account]
+#[derive(InitSpace)]
+pub struct TokenLottery {
+    pub bump: u8, // to use later
+    pub winner: u64,
+    pub winner_chosed: bool,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub lottery_pot_amount: u64,
+    pub total_tickets: u64,
+    pub ticket_price: u64,
+    pub authority: Pubkey,
+    pub randomness_account: Pubkey,
+}
