@@ -1,5 +1,13 @@
 use anchor_lang::{prelude::*, system_program};
-use anchor_spl::{associated_token::AssociatedToken, metadata::{self, mpl_token_metadata::types::{Creator, DataV2}, Metadata}, token_interface::{self, Mint, TokenAccount, TokenInterface}};
+use anchor_spl::{
+    associated_token::AssociatedToken,
+    metadata::{
+        self,
+        mpl_token_metadata::types::{Creator, DataV2},
+        Metadata,
+    },
+    token_interface::{self, Mint, TokenAccount, TokenInterface},
+};
 
 use crate::{CustomErrors, TokenLottery, NAME, SYMBOL, URI};
 
@@ -9,7 +17,7 @@ pub struct BuyTicket<'info> {
     pub buyer: Signer<'info>,
 
     #[account(
-        mut,    
+        mut,
         seeds = [b"token_lottery".as_ref()],
         bump = token_lottery.bump
     )]
@@ -19,9 +27,9 @@ pub struct BuyTicket<'info> {
         init,
         payer = buyer,
         mint::decimals = 0,
-        mint::authority = collection_mint_account,
-        mint::freeze_authority = collection_mint_account,
-        mint::token_program  =  token_program,      
+        mint::authority = collection_mint,
+        mint::freeze_authority = collection_mint,
+        mint::token_program  =  token_program,
         seeds = [token_lottery.total_tickets.to_le_bytes().as_ref()],
         bump
     )]
@@ -69,7 +77,7 @@ pub struct BuyTicket<'info> {
         seeds = [
             b"metadata",
             token_metadata_program.key().as_ref(),
-            collection_mint_account.key().as_ref()
+            collection_mint.key().as_ref()
         ],
         bump,
         seeds::program = token_metadata_program.key(),
@@ -82,7 +90,7 @@ pub struct BuyTicket<'info> {
         seeds = [
             b"metadata",
             token_metadata_program.key().as_ref(),
-            collection_mint_account.key().as_ref(),
+            collection_mint.key().as_ref(),
             b"edition"
         ],
         bump,
@@ -93,15 +101,15 @@ pub struct BuyTicket<'info> {
     #[account(
         mut,
         seeds = [b"collection_mint".as_ref()],
-        bump
+        bump,
     )]
-    pub collection_mint_account: InterfaceAccount<'info, TokenAccount>,
-    
-    pub associated_token_program : Program<'info, AssociatedToken>,
+    pub collection_mint: InterfaceAccount<'info, Mint>,
+
+    pub associated_token_program: Program<'info, AssociatedToken>,
     pub token_program: Interface<'info, TokenInterface>,
-    pub token_metadata_program : Program<'info, Metadata>,
+    pub token_metadata_program: Program<'info, Metadata>,
     pub system_program: Program<'info, System>,
-    pub rent : Sysvar<'info, Rent>,
+    pub rent: Sysvar<'info, Rent>,
 }
 
 pub fn buy_ticket_lottery(ctx: Context<BuyTicket>) -> Result<()> {
@@ -111,39 +119,36 @@ pub fn buy_ticket_lottery(ctx: Context<BuyTicket>) -> Result<()> {
     let token_lottery = &ctx.accounts.token_lottery;
 
     if clock.slot < token_lottery.start_time || clock.slot > token_lottery.end_time {
-        return Err(CustomErrors::OutOfTime.into())
+        return Err(CustomErrors::OutOfTime.into());
     }
-        
+
     msg!("Sending SOL to token_lottery account..");
 
     system_program::transfer(
-            CpiContext::new(
-                ctx.accounts.system_program.to_account_info(),
-                system_program::Transfer {
+        CpiContext::new(
+            ctx.accounts.system_program.to_account_info(),
+            system_program::Transfer {
                 from: ctx.accounts.buyer.to_account_info(),
-                to: ctx.accounts.token_lottery.to_account_info()
-            }
-        ), 
-        ctx.accounts.token_lottery.ticket_price
-    )?;    
+                to: ctx.accounts.token_lottery.to_account_info(),
+            },
+        ),
+        ctx.accounts.token_lottery.ticket_price,
+    )?;
 
     ctx.accounts.token_lottery.lottery_pot_amount += ctx.accounts.token_lottery.ticket_price;
-    
+
     msg!("Sending NFT Ticket to {:?}...", ctx.accounts.buyer.key());
 
-    let signer_seeds: &[&[&[u8]]] = &[&[
-        b"collection_mint".as_ref(),
-        &[ctx.bumps.collection_mint_account]
-    ]];
-    
+    let signer_seeds: &[&[&[u8]]] = &[&[b"collection_mint".as_ref(), &[ctx.bumps.collection_mint]]];
+
     // token_interface::transfer_checked(
     //     CpiContext::new_with_signer(
     //         ctx.accounts.token_program.to_account_info(),
     //         token_interface::TransferChecked {
-    //             from: ctx.accounts.collection_mint_account.to_account_info(),
+    //             from: ctx.accounts.collection_mint.to_account_info(),
     //             mint: ctx.accounts.ticket_mint.to_account_info(),
     //             to: ctx.accounts.destination.to_account_info(),
-    //             authority: ctx.accounts.collection_mint_account.to_account_info()
+    //             authority: ctx.accounts.collection_mint.to_account_info()
     //         },
     //         signer_seeds),
     //     1,
@@ -155,35 +160,35 @@ pub fn buy_ticket_lottery(ctx: Context<BuyTicket>) -> Result<()> {
             token_interface::MintTo {
                 mint: ctx.accounts.ticket_mint.to_account_info(),
                 to: ctx.accounts.destination.to_account_info(),
-                authority: ctx.accounts.collection_mint_account.to_account_info()
+                authority: ctx.accounts.collection_mint.to_account_info(),
             },
-            signer_seeds
+            signer_seeds,
         ),
-        1
+        1,
     )?;
 
     msg!("Creating metadata to new Ticket...");
 
     metadata::create_metadata_accounts_v3(
         CpiContext::new_with_signer(
-            ctx.accounts.token_metadata_program.to_account_info(), 
+            ctx.accounts.token_metadata_program.to_account_info(),
             metadata::CreateMetadataAccountsV3 {
                 metadata: ctx.accounts.ticket_metadata_account.to_account_info(),
                 mint: ctx.accounts.ticket_mint.to_account_info(),
-                mint_authority: ctx.accounts.collection_mint_account.to_account_info(),
+                mint_authority: ctx.accounts.collection_mint.to_account_info(),
                 payer: ctx.accounts.buyer.to_account_info(),
-                update_authority: ctx.accounts.collection_mint_account.to_account_info(),
+                update_authority: ctx.accounts.collection_mint.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
-                rent: ctx.accounts.rent.to_account_info() 
-            }, 
-            signer_seeds
+                rent: ctx.accounts.rent.to_account_info(),
+            },
+            signer_seeds,
         ),
-        DataV2{
+        DataV2 {
             collection: None,
-            creators: Some(vec![Creator{
-                address: ctx.accounts.collection_mint_account.key(),
+            creators: Some(vec![Creator {
+                address: ctx.accounts.collection_mint.key(),
                 share: 100,
-                verified: true
+                verified: true,
             }]),
             name: format!("{}{}", NAME, ctx.accounts.token_lottery.total_tickets),
             symbol: SYMBOL.to_string(),
@@ -193,7 +198,7 @@ pub fn buy_ticket_lottery(ctx: Context<BuyTicket>) -> Result<()> {
         },
         true,
         true,
-        None  // only to collections
+        None, // only to collections
     )?;
 
     msg!("Creating master edition to new NFT Ticket");
@@ -204,17 +209,17 @@ pub fn buy_ticket_lottery(ctx: Context<BuyTicket>) -> Result<()> {
             metadata::CreateMasterEditionV3 {
                 edition: ctx.accounts.ticket_master_edition.to_account_info(),
                 mint: ctx.accounts.ticket_mint.to_account_info(),
-                mint_authority: ctx.accounts.collection_mint_account.to_account_info(),
-                update_authority: ctx.accounts.collection_mint_account.to_account_info(),
+                mint_authority: ctx.accounts.collection_mint.to_account_info(),
+                update_authority: ctx.accounts.collection_mint.to_account_info(),
                 payer: ctx.accounts.buyer.to_account_info(),
                 metadata: ctx.accounts.ticket_metadata_account.to_account_info(),
                 token_program: ctx.accounts.token_program.to_account_info(),
                 system_program: ctx.accounts.system_program.to_account_info(),
-                rent: ctx.accounts.rent.to_account_info()
+                rent: ctx.accounts.rent.to_account_info(),
             },
-            signer_seeds
+            signer_seeds,
         ),
-        Some(0)
+        Some(0),
     )?;
 
     // no set_and_verify_collection porque acabamos de agregar un nuevo nft a la collection
@@ -223,21 +228,20 @@ pub fn buy_ticket_lottery(ctx: Context<BuyTicket>) -> Result<()> {
             ctx.accounts.token_metadata_program.to_account_info(),
             metadata::SetAndVerifySizedCollectionItem {
                 metadata: ctx.accounts.ticket_metadata_account.to_account_info(),
-                collection_authority: ctx.accounts.collection_mint_account.to_account_info(),
+                collection_authority: ctx.accounts.collection_mint.to_account_info(),
                 payer: ctx.accounts.buyer.to_account_info(),
-                update_authority: ctx.accounts.collection_mint_account.to_account_info(),
+                update_authority: ctx.accounts.collection_mint.to_account_info(),
                 collection_master_edition: ctx.accounts.collection_master_edition.to_account_info(),
                 collection_metadata: ctx.accounts.collection_metadata_account.to_account_info(),
-                collection_mint: ctx.accounts.collection_mint_account.to_account_info()
+                collection_mint: ctx.accounts.collection_mint.to_account_info(),
             },
-            signer_seeds
+            signer_seeds,
         ),
-        None
+        None,
     )?;
 
- 
     // sumar ticket en token_lottery
-    ctx.accounts.token_lottery.total_tickets +=  1;
+    ctx.accounts.token_lottery.total_tickets += 1;
 
     Ok(())
 }

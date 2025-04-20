@@ -25,22 +25,23 @@ describe("Token Lottery Program", () => {
       // .rpc({ skipPreflight: true });
       .instruction();
 
-    // const computeInstruction = anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({
-    //   units: 300000,
-    // });
+    const computeInstruction = anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({
+      units: 300000,
+    });
 
-    // const computePrice = anchor.web3.ComputeBudgetProgram.setComputeUnitPrice({
-    //   microLamports: 1,
-    // });
+    const computePrice = anchor.web3.ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: 1,
+    });
 
     const latestBlockchain = await provider.connection.getLatestBlockhash();
     const tx = new anchor.web3.Transaction({
       feePayer: provider.wallet.publicKey,
       blockhash: latestBlockchain.blockhash,
       lastValidBlockHeight: latestBlockchain.lastValidBlockHeight,
-    }).add(buyTx);
-    // .add(computeInstruction)
-    // .add(computePrice);
+    })
+      .add(buyTx)
+      .add(computeInstruction)
+      .add(computePrice);
 
     const signature = await anchor.web3.sendAndConfirmTransaction(
       provider.connection,
