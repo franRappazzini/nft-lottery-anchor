@@ -11,7 +11,7 @@ pub struct InitializeConfig<'info> {
         init,
         payer = signer,
         space = TokenLottery::INIT_SPACE + ANCHOR_DISCRIMINATOR,
-        seeds = [b"token_lottery"],
+        seeds = [b"token_lottery".as_ref()],
         bump
     )]
     pub token_lottery: Account<'info, TokenLottery>,
@@ -19,10 +19,10 @@ pub struct InitializeConfig<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn initialize_config(
+pub fn initialize_config_account(
     ctx: Context<InitializeConfig>,
-    start_time: i64,
-    end_time: i64,
+    start_time: u64,
+    end_time: u64,
     ticket_price: u64,
 ) -> Result<()> {
     ctx.accounts.token_lottery.set_inner(TokenLottery {

@@ -29,21 +29,26 @@ pub struct InitializeLottery<'info> {
 
     /// CHECK: Validate address by deriving pda (https://github.com/solana-developers/program-examples/blob/main/tokens/nft-minter/anchor/programs/nft-minter/src/lib.rs)
     #[account(
-    mut,
-    seeds = [
-        b"metadata",
-        token_metadata_program.key().as_ref(),
-        mint_account.key().as_ref()
-    ],
-    bump,
-    seeds::program = token_metadata_program.key(),
-)]
+        mut,
+        seeds = [
+            b"metadata",
+            token_metadata_program.key().as_ref(),
+            mint_account.key().as_ref()
+        ],
+        bump,
+        seeds::program = token_metadata_program.key(),
+    )]
     pub metadata_account: UncheckedAccount<'info>,
 
     /// CHECK: Validate address by deriving pda
     #[account(
         mut,
-        seeds = [b"metadata", token_metadata_program.key().as_ref(), mint_account.key().as_ref(), b"edition"],
+        seeds = [
+            b"metadata",
+            token_metadata_program.key().as_ref(),
+            mint_account.key().as_ref(),
+            b"edition"
+        ],
         bump,
         seeds::program = token_metadata_program.key(),
     )]
@@ -66,7 +71,7 @@ pub struct InitializeLottery<'info> {
     pub rent: Sysvar<'info, Rent>, // para hacer la metadata del token
 }
 
-pub fn initialize_lottery(ctx: Context<InitializeLottery>) -> Result<()> {
+pub fn initialize_lottery_account(ctx: Context<InitializeLottery>) -> Result<()> {
     let signer_seeds_collection_mint: &[&[&[u8]]] = &[&[
         b"collection_mint".as_ref(),
         &[ctx.bumps.collection_mint_account],

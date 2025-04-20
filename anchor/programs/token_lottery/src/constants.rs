@@ -9,4 +9,4 @@ pub const NAME: &str = "Lottery NFT #";
 pub const SYMBOL: &str = "LOT";
 
 #[constant]
-pub const URI: &str = "https://img.freepik.com/foto-gratis/dos-entradas-vista-frontal-azul-aislado-blanco_1101-3055.jpg";
+pub const URI: &str = "https://token-creator-lac.vercel.app/token_metadata.json";
