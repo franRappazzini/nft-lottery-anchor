@@ -153,7 +153,7 @@ pub fn initialize_lottery_account(ctx: Context<InitializeLottery>) -> Result<()>
             },
             signer_seeds_collection_mint,
         ),
-        None,
+        Some(0), // Collection Must Be a Unique Master Edition
     )?;
 
     msg!("Verifying collection");
