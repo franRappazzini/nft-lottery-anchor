@@ -37,4 +37,8 @@ pub mod token_lottery {
     pub fn buy_ticket(ctx: Context<BuyTicket>) -> Result<()> {
         buy_ticket_lottery::buy_ticket_lottery(ctx)
     }
+
+    pub fn commit_randomness(ctx: Context<CommitRandomness>) -> Result<()> {
+        commit_randomness_account::commit_randomness_account(ctx)
+    }
 }
