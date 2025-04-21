@@ -41,4 +41,12 @@ pub mod token_lottery {
     pub fn commit_randomness(ctx: Context<CommitRandomness>) -> Result<()> {
         commit_randomness_account::commit_randomness_account(ctx)
     }
+
+    pub fn reveal_winner(ctx: Context<RevealWinner>) -> Result<()> {
+        reveal_winner_lottery::reveal_winner_lottery(ctx)
+    }
+
+    pub fn claim_tokens(ctx: Context<ClaimTokens>) -> Result<()> {
+        claim_tokens_lottery::claim_tokens_lottery(ctx)
+    }
 }

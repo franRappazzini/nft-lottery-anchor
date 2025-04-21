@@ -6,12 +6,13 @@ use crate::{CustomErrors, TokenLottery};
 #[derive(Accounts)]
 pub struct CommitRandomness<'info> {
     #[account(mut)]
-    pub signer: Signer<'info>,
+    pub authority: Signer<'info>,
 
     #[account(
         mut,
         seeds = [b"token_lottery".as_ref()],
-        bump = token_lottery.bump
+        bump = token_lottery.bump,
+        has_one = authority @ CustomErrors::UnauthorizedAction
     )]
     pub token_lottery: Account<'info, TokenLottery>,
 
@@ -23,11 +24,6 @@ pub fn commit_randomness_account(ctx: Context<CommitRandomness>) -> Result<()> {
     // https://docs.switchboard.xyz/product-documentation/randomness/tutorials/solana-svm
     // Load clock to check data from the future
     let clock = Clock::get()?;
-    let token_lottery = &ctx.accounts.token_lottery;
-
-    if token_lottery.authority != ctx.accounts.signer.key() {
-        return Err(CustomErrors::UnauthorizedAction.into());
-    }
 
     // Update token_lottery's randomness_account
     let randomness_data =

@@ -8,4 +8,18 @@ pub enum CustomErrors {
     UnauthorizedAction,
     #[msg("Randomness already revealed.")]
     RandomnessAlreadyRevealed,
+    #[msg("Randomness not resolved.")]
+    RandomnessNotResolved,
+    #[msg("Incorrect randomness account.")]
+    IncorrectRandomness,
+    #[msg("Winner already chosen.")]
+    WinnerChosen,
+    #[msg("Winner not chosen yet.")]
+    WinnerNotChosen,
+    #[msg("Token not verified.")]
+    TokenNotVerified,
+    #[msg("Incorrect ticket.")]
+    IncorrectTicket,
+    #[msg("No tickets yet.")]
+    NoTicket,
 }

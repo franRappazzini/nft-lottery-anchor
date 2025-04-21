@@ -1,93 +1,97 @@
 import * as anchor from "@coral-xyz/anchor";
-import * as fs from "fs";
 import * as sb from "@switchboard-xyz/on-demand";
 
 import { before, describe, it } from "node:test";
 
 import { Program } from "@coral-xyz/anchor";
-import SbIdl from "../switchboard_idl.json";
-import { TOKEN_PROGRAM_ID } from "@solana/spl-token";
-import { TokenLottery } from "anchor/target/types/token_lottery";
-import dotenv from "dotenv";
+import { TOKEN_PROGRAM_ID } from "@coral-xyz/anchor/dist/cjs/utils/token";
+import { TokenLottery } from "../target/types/token_lottery";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 
-// import reader from "readline-sync";
-
-dotenv.config();
-console.clear();
-
-describe("Token Lottery Program", () => {
+describe("NFT Token Lottery Program", () => {
   // Configure the client to use the local cluster.
   const provider = anchor.AnchorProvider.env();
+  const connection = provider.connection;
   const wallet = provider.wallet as anchor.Wallet;
-  const wallet2 = new anchor.Wallet(anchor.web3.Keypair.generate());
-
   anchor.setProvider(provider);
 
   const program = anchor.workspace.TokenLottery as Program<TokenLottery>;
-
-  let sbProgram: anchor.Program<anchor.Idl>;
-  // const sbProgram = new anchor.Program(SbIdl as anchor.Idl, provider);
+  let sbProgram: Program<anchor.Idl>;
   const rngKp = anchor.web3.Keypair.generate();
 
-  // to set the switchboard json
+  const TOKEN_METADATA_PROGRAM_ID = new anchor.web3.PublicKey(
+    "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+  );
+
   before(async () => {
-    const switchboardIDL = (await anchor.Program.fetchIdl(sb.ON_DEMAND_MAINNET_PID, {
+    const sbIdl = (await anchor.Program.fetchIdl(sb.ON_DEMAND_MAINNET_PID, {
       connection: new anchor.web3.Connection("https://api.mainnet-beta.solana.com"),
     })) as anchor.Idl;
 
-    console.log("switchboard idl", switchboardIDL);
+    console.log("Switchboard IDL:", sbIdl);
 
-    sbProgram = new anchor.Program(switchboardIDL, provider);
-
-    fs.writeFileSync("switchboard_idl.json", JSON.stringify(switchboardIDL, null, 2));
-    console.log("switchboard idl saved");
+    sbProgram = new anchor.Program(sbIdl, provider);
   });
 
-  const buyTicket = async (/* wallet: anchor.Wallet */) => {
-    const buyTx = await program.methods
+  async function buyTicket() {
+    const buyTicketIx = await program.methods
       .buyTicket()
       .accounts({
         tokenProgram: TOKEN_PROGRAM_ID,
-        // buyer: wallet.publicKey,
       })
-      // .signers([wallet.payer])
-      // .rpc({ skipPreflight: true });
       .instruction();
 
-    const computeInstruction = anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({
+    const blockhashContext = await connection.getLatestBlockhash();
+
+    // aumentamos el limite de compute units porque pasa los 200000 por default
+    const computeIx = anchor.web3.ComputeBudgetProgram.setComputeUnitLimit({
       units: 300000,
     });
 
-    const computePrice = anchor.web3.ComputeBudgetProgram.setComputeUnitPrice({
+    const priorityIx = anchor.web3.ComputeBudgetProgram.setComputeUnitPrice({
       microLamports: 1,
     });
 
-    const latestBlockchain = await provider.connection.getLatestBlockhash();
     const tx = new anchor.web3.Transaction({
-      feePayer: wallet.publicKey,
-      blockhash: latestBlockchain.blockhash,
-      lastValidBlockHeight: latestBlockchain.lastValidBlockHeight,
+      blockhash: blockhashContext.blockhash,
+      lastValidBlockHeight: blockhashContext.lastValidBlockHeight,
+      feePayer: wallet.payer.publicKey,
     })
-      .add(buyTx)
-      .add(computeInstruction)
-      .add(computePrice);
+      .add(buyTicketIx)
+      .add(computeIx)
+      .add(priorityIx);
 
-    const signature = await anchor.web3.sendAndConfirmTransaction(
-      provider.connection,
-      tx,
-      [wallet.payer],
-      { skipPreflight: true }
-    );
+    const signature = await anchor.web3.sendAndConfirmTransaction(connection, tx, [wallet.payer], {
+      skipPreflight: true,
+    });
+    console.log("Buy ticket signature:", signature);
+  }
 
-    console.log("Buy ticket tx signature:", signature);
-  };
+  it("Should initialize config and lottery", async () => {
+    const slot = await connection.getSlot();
 
-  it("Should initilize configs and lottery", async () => {
-    // Add your test here.
-    const slot = await provider.connection.getSlot();
+    const collectionMint = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("collection_mint")],
+      program.programId
+    )[0];
 
-    const instructionTx = await program.methods
-      .initializeConfig(bn(0), bn(slot + 100), bn(10000))
+    const metadata = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("metadata"), TOKEN_METADATA_PROGRAM_ID.toBuffer(), collectionMint.toBuffer()],
+      TOKEN_METADATA_PROGRAM_ID
+    )[0];
+
+    const masterEdition = anchor.web3.PublicKey.findProgramAddressSync(
+      [
+        Buffer.from("metadata"),
+        TOKEN_METADATA_PROGRAM_ID.toBuffer(),
+        collectionMint.toBuffer(),
+        Buffer.from("edition"),
+      ],
+      TOKEN_METADATA_PROGRAM_ID
+    )[0];
+
+    const initConfigIx = await program.methods
+      .initializeConfig(new anchor.BN(0), new anchor.BN(slot + 10), new anchor.BN(10000))
       .instruction();
 
     // PARA EL metadata_program_account ES NECESARIO DESCARGAR EL PROGRAMA DE MAINNET Y EJECUTARLO LOCAL
@@ -99,47 +103,44 @@ describe("Token Lottery Program", () => {
       # solana-test-validator --bpf-program <address to load the program to> <path to program file> --reset
       solana-test-validator --bpf-program PROGRAM_ID NAME.so --reset
     */
-    const instructionLottery = await program.methods
+    const initLotteryIx = await program.methods
       .initializeLottery()
       .accounts({
+        // masterEdition: masterEdition,
+        // metadata: metadata,
         tokenProgram: TOKEN_PROGRAM_ID,
       })
       .instruction();
 
-    const latestBlockchain = await provider.connection.getLatestBlockhash();
+    const blockhashContext = await connection.getLatestBlockhash();
 
     const tx = new anchor.web3.Transaction({
-      feePayer: provider.wallet.publicKey,
-      blockhash: latestBlockchain.blockhash,
-      lastValidBlockHeight: latestBlockchain.lastValidBlockHeight,
+      blockhash: blockhashContext.blockhash,
+      lastValidBlockHeight: blockhashContext.lastValidBlockHeight,
+      feePayer: wallet.payer.publicKey,
     })
-      .add(instructionTx)
-      .add(instructionLottery);
+      .add(initConfigIx)
+      .add(initLotteryIx);
 
-    const signature = await anchor.web3.sendAndConfirmTransaction(
-      provider.connection,
-      tx,
-      [wallet.payer],
-      { skipPreflight: true }
-    );
+    const signature = await anchor.web3.sendAndConfirmTransaction(connection, tx, [wallet.payer], {
+      skipPreflight: true,
+    });
+    console.log("Initialize signature:", signature);
+  });
 
-    console.log("tx signature:", signature);
-
-    console.log(wallet.publicKey.toBase58());
-    console.log(wallet2.publicKey.toBase58());
-
-    await buyTicket(/* wallet */);
-    await buyTicket(/* wallet2 */);
+  it("Should buy tickets", async () => {
     await buyTicket();
     await buyTicket();
     await buyTicket();
     await buyTicket();
+    await buyTicket();
+  });
 
+  it("Should commit and reveal a winner", async () => {
     const sbQueue = new anchor.web3.PublicKey("A43DyUGA7s8eXPxqEjJY6EBu1KKbNgfxF8h17VAHn13w"); // mainnet
-    // const sbQueue = new anchor.web3.PublicKey(SbIdl.address); // localnet
 
     const queueAccount = new sb.Queue(sbProgram, sbQueue);
-    console.log("Queue account", sbQueue.toString());
+    console.log("Queue account:", sbQueue.toString());
 
     try {
       await queueAccount.loadData();
@@ -148,70 +149,132 @@ describe("Token Lottery Program", () => {
       process.exit(1);
     }
 
-    const [randomnessAccount, randomnessIx] = await sb.Randomness.create(sbProgram, rngKp, sbQueue);
+    const [randomness, ix] = await sb.Randomness.create(sbProgram, rngKp, sbQueue);
+
     console.log("Created randomness account..");
-    console.log("Randomness account", randomnessAccount.pubkey.toBase58());
+    console.log("Randomness account", randomness.pubkey.toBase58());
     console.log("rkp account", rngKp.publicKey.toBase58());
 
     const createRandomnessTx = await sb.asV0Tx({
-      connection: provider.connection,
-      ixs: [randomnessIx],
+      connection: connection,
+      ixs: [ix],
       payer: wallet.publicKey,
       signers: [wallet.payer, rngKp],
       computeUnitPrice: 75_000,
       computeUnitLimitMultiple: 1.3,
     });
 
-    const blockhashContext = await provider.connection.getLatestBlockhashAndContext();
+    const blockhashContext = await connection.getLatestBlockhashAndContext();
+    const createRandomnessSignature = await connection.sendTransaction(createRandomnessTx);
 
-    const createRandomnessSignature = await provider.connection.sendTransaction(createRandomnessTx);
-    await provider.connection.confirmTransaction({
+    await connection.confirmTransaction({
       signature: createRandomnessSignature,
       blockhash: blockhashContext.value.blockhash,
       lastValidBlockHeight: blockhashContext.value.lastValidBlockHeight,
     });
     console.log(
-      "Transaction Signature for randomness account creation: ",
+      "Transaction Signature for randomness account creation:",
       createRandomnessSignature
     );
 
-    const commitIx = await randomnessAccount.commitIx(sbQueue);
+    console.log("randomness account:", randomness.pubkey.toBase58());
+    console.log("Randomness account data:", await randomness.loadData());
+    console.log("sbQueue:", sbQueue.toBase58());
+
+    const commitIx = await randomness.commitIx(sbQueue);
+    console.log("Commit randomness ix:", commitIx);
 
     const commitRandomnessIx = await program.methods
       .commitRandomness()
-      .accounts({ randomnessAccount: randomnessAccount.pubkey })
+      .accounts({ randomnessAccount: randomness.pubkey })
       .instruction();
+
+    const commitTx = await sb.asV0Tx({
+      connection: sbProgram.provider.connection,
+      ixs: [commitRandomnessIx, commitIx],
+      payer: wallet.publicKey,
+      signers: [wallet.payer],
+      computeUnitPrice: 75_000,
+      computeUnitLimitMultiple: 1.3,
+    });
+
+    console.log("Commit randomness tx:", commitTx);
+
+    const commitSignature = await connection.sendTransaction(commitTx);
+    await connection.confirmTransaction({
+      signature: commitSignature,
+      blockhash: blockhashContext.value.blockhash,
+      lastValidBlockHeight: blockhashContext.value.lastValidBlockHeight,
+    });
+    console.log("commitRandomness tx signature:", commitSignature);
+
+    const sbRevealIx = await randomness.revealIx();
+    const revealIx = await program.methods.revealWinner().instruction();
+    const revealTx = await sb.asV0Tx({
+      connection: sbProgram.provider.connection,
+      ixs: [sbRevealIx, revealIx],
+      payer: wallet.publicKey,
+      signers: [wallet.payer],
+      computeUnitPrice: 75_000,
+      computeUnitLimitMultiple: 1.3,
+    });
+
+    const revealSignature = await connection.sendTransaction(revealTx);
+    await connection.confirmTransaction({
+      signature: commitSignature,
+      blockhash: blockhashContext.value.blockhash,
+      lastValidBlockHeight: blockhashContext.value.lastValidBlockHeight,
+    });
+    console.log("revealWinner tx signature", revealSignature);
   });
 
-  // it("Should initialize and config the lottery", async () => {
-  //   const slot = await provider.connection.getSlot();
+  it("Should claim tokens", async () => {
+    const tokenLotteryAddress = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("token_lottery")],
+      program.programId
+    )[0];
 
-  //   const configTx = await program.methods
-  //     .initializeConfig(bn(0), bn(slot + 100), bn(10000))
-  //     // .accounts({})
-  //     .rpc();
+    const lotteryConfig = await program.account.tokenLottery.fetch(tokenLotteryAddress);
+    console.log("Lottery config:", lotteryConfig);
 
-  //   console.log("Config tx signature:", configTx);
+    const tokenAccounts = await connection.getParsedTokenAccountsByOwner(wallet.publicKey, {
+      programId: TOKEN_PROGRAM_ID,
+    });
+    tokenAccounts.value.forEach(async (account) => {
+      console.log("Token account mint:", account.account.data.parsed.info.mint);
+      console.log("Token account address:", account.pubkey.toBase58());
+    });
 
-  //   const lotteryTx = await program.methods
-  //     .initializeLottery()
-  //     .accounts({
-  //       tokenProgram: TOKEN_PROGRAM_ID,
-  //     })
-  //     .rpc();
+    const winnerAccount = anchor.web3.PublicKey.findProgramAddressSync(
+      [new anchor.BN(lotteryConfig.winner).toArrayLike(Buffer, "le", 8)],
+      program.programId
+    )[0];
+    console.log("Winner account:", winnerAccount.toBase58());
 
-  //   console.log("Lottery tx signature:", lotteryTx);
+    const winnerTokenAddress = getAssociatedTokenAddressSync(winnerAccount, wallet.publicKey);
+    console.log("Winner token address:", winnerTokenAddress.toBase58());
 
-  //   // Fetch the account data
-  //   // const lotteryAccount = await program.account.tokenLottery.fetch(program.programId);
-  //   // console.log("Lottery account:", lotteryAccount);
+    const claimIx = await program.methods
+      .claimTokens()
+      .accounts({
+        tokenProgram: TOKEN_PROGRAM_ID,
+      })
+      .instruction();
 
-  //   console.log("program id:", program.programId.toBase58());
+    const blockhashContext = await connection.getLatestBlockhash();
 
-  //   await buyTicket();
-  // });
+    const claimTx = new anchor.web3.Transaction({
+      blockhash: blockhashContext.blockhash,
+      lastValidBlockHeight: blockhashContext.lastValidBlockHeight,
+      feePayer: wallet.payer.publicKey,
+    }).add(claimIx);
+
+    const claimTokensSignature = await anchor.web3.sendAndConfirmTransaction(
+      connection,
+      claimTx,
+      [wallet.payer],
+      { skipPreflight: true }
+    );
+    console.log(claimTokensSignature);
+  });
 });
-
-function bn(n: number) {
-  return new anchor.BN(n);
-}
